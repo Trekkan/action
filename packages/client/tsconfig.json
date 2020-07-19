@@ -1,0 +1,30 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "~/*": [
+        "*"
+      ],
+      "parabol-server/*": [
+        "../server/*"
+      ],
+      "static/*": [
+        "../../static/*"
+      ]
+    },
+    "outDir": "lib",
+    "lib": [
+      "esnext",
+      "dom"
+    ],
+    "types": [
+      "node"
+    ],
+  },
+  "exclude": [
+    "serviceWorker",
+    "**/node_modules",
+    "types/graphql.ts"
+  ]
+}

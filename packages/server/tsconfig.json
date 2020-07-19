@@ -1,0 +1,32 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": "../",
+    "paths": {
+      "server/*": [
+        ""
+      ],
+      "parabol-client/*": [
+        "client/*"
+      ],
+      "~/*": [
+        "client/*"
+      ]
+    },
+    "lib": [
+      "esnext",
+      "dom"
+    ],
+    "types": [
+      "node"
+    ],
+  },
+  "exclude": [
+    "**/node_modules"
+  ],
+  "files": [
+    "types/modules.d.ts",
+    "email/components/SummaryEmail/MeetingSummaryEmail/MeetingSummaryEmail.tsx",
+    "server.ts"
+  ],
+}

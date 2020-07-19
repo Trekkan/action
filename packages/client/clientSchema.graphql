@@ -1,0 +1,83 @@
+extend interface NewMeeting {
+  localPhase: NewMeetingPhase!
+  localStage: NewMeetingStage!
+  showSidebar: Boolean!
+  isAnonymousComment: Boolean
+  replyingToCommentId: String
+}
+
+extend type ActionMeeting {
+  localPhase: NewMeetingPhase!
+  localStage: NewMeetingStage!
+  showSidebar: Boolean!
+}
+
+extend type RetrospectiveMeeting {
+  isAnonymousComment: Boolean
+  isViewerDragInProgress: Boolean
+  localPhase: NewMeetingPhase!
+  localStage: NewMeetingStage!
+  showSidebar: Boolean!
+}
+
+extend type Team {
+  teamMemberFilter: TeamMember
+}
+
+extend type User {
+  # If positive, client clock is ahead of server clock by this many ms
+  clientClockOffset: Int
+  dashSearch: String
+  pageName: String
+  snackbarOffset: Int
+  teamFilter: Team
+}
+
+extend type Task {
+  error: String
+  contentText: String
+}
+
+extend type RetroReflectionGroup {
+  isExpanded: Boolean
+}
+
+extend type RetroReflection {
+  isViewerDragging: Boolean
+  isDropping: Boolean
+  remoteDrag: RemoteReflectionDrag
+  ignoreDragStarts: [ID!]
+  isEditing: Boolean
+}
+
+extend type RetroPhaseItem {
+  editorIds: [ID!]
+}
+
+extend type RetrospectiveMeetingSettings {
+  activeTemplateId: String
+}
+
+extend interface NewMeetingStage {
+  localScheduledEndTime: String
+}
+
+extend type CheckInStage {
+  localScheduledEndTime: String
+}
+
+extend type GenericMeetingStage {
+  localScheduledEndTime: String
+}
+
+extend type RetroDiscussStage {
+  localScheduledEndTime: String
+}
+
+extend type UpdatesStage {
+  localScheduledEndTime: String
+}
+
+extend type AgendaItemsStage {
+  localScheduledEndTime: String
+}

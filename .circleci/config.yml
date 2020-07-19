@@ -2,20 +2,20 @@ version: 2.0
 jobs:
   build:
     docker:
-      - image: circleci/node:11.14.0
+      - image: circleci/node:13.6.0
       - image: rethinkdb:2.3.6
       - image: redis:3.2.8
       - image: cypress/base:10
         environment:
           TERM: xterm
     environment:
-      CODECOV_TOKEN: "ebdd735e-579a-4afd-85fc-f53907544c31"
       DEVOPS_REPO: "git@github.com:ParabolInc/action-devops.git"
       DEVOPS_WORKDIR: "~/action-devops"
       GITHUB_REMOTE_DEVELOPMENT: "dokku@action-dev-nyc1-01.parabol.co:web"
       GITHUB_REMOTE_PRODUCTION: "dokku@action-production.parabol.co:web"
       GITHUB_REMOTE_STAGING: "dokku@action-staging.parabol.co:web"
-      PRODUCTION_BACKUP_VOLUME: "/mnt/volume-nyc1-01/action-production"
+      PRODUCTION_BACKUP_LOCATION: "dokku@backups.action-production.parabol.co"
+      PRODUCTION_BACKUP_VOLUME: "/mnt/volume_nyc1_01/action-production-rethinkdb-nyc1-01"
       SENTRY_ORG: "parabol"
       SENTRY_PROJECT: "action-production"
     working_directory: ~/action
@@ -27,11 +27,11 @@ jobs:
           name: Slack setup
           command: |
             if [ "${CIRCLE_BRANCH}" == "production" ]; then
-              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"Starting CI and Deployment..."}' $SLACK_PROD_URL
+              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"Starting `production` CI and Deployment..."}' $SLACK_DEVOPS_URL
             elif [ "${CIRCLE_BRANCH}" == "staging" ]; then
-              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"Starting CI and Deployment..."}' $SLACK_STAGING_URL
+              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"Starting `staging` CI and Deployment..."}' $SLACK_DEVOPS_URL
             elif [ "${CIRCLE_BRANCH}" == "development" ]; then
-              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"Starting CI and Deployment..."}' $SLACK_DEV_URL
+              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"Starting `development` CI and Deployment..."}' $SLACK_DEVOPS_URL
             fi
       - checkout
       - restore_cache:
@@ -50,36 +50,32 @@ jobs:
       - run:
           name: DevOps checkout
           command: |
-            ssh-agent $(
-            ssh-add -D;
-            ssh-add ~/.ssh/id_rsa_53a83735c37e54f519f68ea1e07852da;
             git clone $DEVOPS_REPO $DEVOPS_WORKDIR
-            )
       - run:
-          name: NPM run test
+          name: Build Assets
           command: |
-            if [ "${CIRCLE_BRANCH}" == "development" ]; then
-            echo "info: development server deploy, skipping"
-            # else
-            #            npm run test
-            #            mkdir test-report ; mv test-report.xml test-report
+            if [ "${CIRCLE_BRANCH}" == "production" ] || [ "${CIRCLE_BRANCH}" == "staging" ]; then
+              cp $DEVOPS_WORKDIR/environments/$CIRCLE_BRANCH .env
+              yarn build --deploy
             fi
       - run:
           name: Cypress Tests
           command: |
             if [ "${CIRCLE_BRANCH}" == "production" ] || [ "${CIRCLE_BRANCH}" == "staging" ]; then
-              cp $DEVOPS_WORKDIR/environments/cypress ./.env
+              cp $DEVOPS_WORKDIR/environments/cypress .env
               # cypress docker image has a bug, sideloading these mitigates it
               sudo apt-get update && sudo apt-get install xvfb libgtk2.0-0 libnotify-dev libgconf-2-4 libnss3 libxss1 libasound2
-              yarn build
               curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
               sudo python get-pip.py
               sudo pip install rethinkdb==2.3.0
-              rethinkdb-restore --force cypress/fixtures/rdb_test.tar.gz
-              yarn test:cypress
+              rethinkdb-restore --force packages/cypress/fixtures/rdb_test.tar.gz
+              node scripts/toolbox/softenDurability.js
+              yarn db:migrate
+              yarn postdeploy
+              yarn test
             fi
       - deploy:
-          name: Possible deployment build
+          name: Commit Deployment
           command: |
             if [ "${CIRCLE_BRANCH}" == "production" ]; then
               export GITHUB_REMOTE="${GITHUB_REMOTE_PRODUCTION}"
@@ -94,41 +90,40 @@ jobs:
               export DEPLOY_ENV="local"
             fi
             if [ -n "${GITHUB_REMOTE}" ]; then
-              cp $DEVOPS_WORKDIR/environments/$DEPLOY_ENV ./.env
-              cp $DEVOPS_WORKDIR/keys/.googlecloudkey.$DEPLOY_ENV.json ./.googlecloudkey.json
-              npm run build:deploy &&
+              cp $DEVOPS_WORKDIR/environments/$DEPLOY_ENV .env
               export ACTION_VERSION=$(grep '"version":' package.json | cut -d\" -f4)
               git config --global user.name "Parabol CircleCI"
               git config --global user.email "admin+circleci@parabol.co"
-              git add .googlecloudkey.json build -f
-              git add src/server/graphql/queryMap.json build -f
+              git add queryMap.json build dist packages/client/__generated__ scripts/toolbox -f
               git commit -m "build $ACTION_VERSION"
-            fi
-      - deploy:
-          name: Possible (production backup) and deployment
-          command: |
-            if [ "${CIRCLE_BRANCH}" == "production" ]; then
-              export GITHUB_REMOTE="${GITHUB_REMOTE_PRODUCTION}"
-            elif [ "${CIRCLE_BRANCH}" == "staging" ]; then
-              export GITHUB_REMOTE="${GITHUB_REMOTE_STAGING}"
-            elif [ "${CIRCLE_BRANCH}" == "development" ]; then
-              export GITHUB_REMOTE="${GITHUB_REMOTE_DEVELOPMENT}"
-            fi
-            if [ -n "${GITHUB_REMOTE}" ]; then
               git remote add dokku $GITHUB_REMOTE
               export SSH_DESTINATION=$(echo $GITHUB_REMOTE | cut -f1 -d:)
               ssh -o StrictHostKeyChecking=no "${SSH_DESTINATION}" -T >/dev/null
             fi &&
             if [ "${GITHUB_REMOTE}" == "${GITHUB_REMOTE_PRODUCTION}" ]; then
-              $DEVOPS_WORKDIR/dokku/rethinkdb-backup.sh \
-                -s "${SSH_DESTINATION}" -d "${PRODUCTION_BACKUP_VOLUME}"
+              ssh -o StrictHostKeyChecking=no "${PRODUCTION_BACKUP_LOCATION}" -T >/dev/null
+              $DEVOPS_WORKDIR/rethinkdb/rethinkdb-backup.sh \
+                -s "${PRODUCTION_BACKUP_LOCATION}" -d "${PRODUCTION_BACKUP_VOLUME}"
             fi &&
             if [ -n "${GITHUB_REMOTE}" ]; then
               git push -f dokku $CIRCLE_BRANCH:master
             fi
+      - run:
+          name: Slack completion
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "production" ]; then
+              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"`production` CI and Deployment complete"}' $SLACK_DEVOPS_URL
+            elif [ "${CIRCLE_BRANCH}" == "staging" ]; then
+              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"`staging` CI and Deployment complete"}' $SLACK_DEVOPS_URL
+            elif [ "${CIRCLE_BRANCH}" == "development" ]; then
+              curl --ssl -X POST -H 'Content-type: application/json' --data '{"text":"`development` CI and Deployment complete"}' $SLACK_DEVOPS_URL
+            fi
       - store_artifacts:
           path: ~/action/build
           destination: build
+      - store_artifacts:
+          path: ~/action/dist
+          destination: dist
       - run:
           name: Upload sentry artifacts
           command: |
@@ -137,6 +132,7 @@ jobs:
               export ACTION_VERSION=$(grep '"version":' package.json | cut -d\" -f4)
               sentry-cli releases new "$ACTION_VERSION"
               sentry-cli releases files "$ACTION_VERSION" upload-sourcemaps ~/action/build
+              sentry-cli releases files "$ACTION_VERSION" upload-sourcemaps ~/action/dist
               sentry-cli releases finalize "$ACTION_VERSION"
             fi
       - store_test_results:

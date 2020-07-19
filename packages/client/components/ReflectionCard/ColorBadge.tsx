@@ -1,0 +1,69 @@
+import styled from '@emotion/styled'
+import graphql from 'babel-plugin-relay/macro'
+import React from 'react'
+import {createFragmentContainer} from 'react-relay'
+import {MenuPosition} from '~/hooks/useCoords'
+import useTooltip from '~/hooks/useTooltip'
+import {NewMeetingPhaseTypeEnum} from '~/types/graphql'
+import {ColorBadge_reflection} from '~/__generated__/ColorBadge_reflection.graphql'
+
+const DROP_SIZE = 32
+const DROP_SIZE_HALF = DROP_SIZE / 2
+
+const ColorDrop = styled('div')<{groupColor: string}>(({groupColor}) => ({
+  backgroundColor: groupColor,
+  borderRadius: 100,
+  height: DROP_SIZE,
+  left: -DROP_SIZE_HALF,
+  position: 'absolute',
+  top: -DROP_SIZE_HALF,
+  width: DROP_SIZE
+}))
+
+const BadgeWrapper = styled('div')({
+  borderRadius: '4px 0 0 0',
+  height: DROP_SIZE_HALF,
+  width: DROP_SIZE_HALF,
+  left: 0,
+  top: 0,
+  overflow: 'hidden',
+  position: 'absolute',
+  zIndex: 4
+})
+
+interface Props {
+  phaseType: NewMeetingPhaseTypeEnum
+  reflection: ColorBadge_reflection
+}
+
+const ColorBadge = (props: Props) => {
+  const {reflection, phaseType} = props
+  const {phaseItem} = reflection
+  const {question, groupColor} = phaseItem
+  const {tooltipPortal, openTooltip, closeTooltip, originRef} = useTooltip<HTMLDivElement>(
+    MenuPosition.LOWER_LEFT,
+    {
+      disabled: phaseType !== NewMeetingPhaseTypeEnum.discuss
+    }
+  )
+  if (phaseType === NewMeetingPhaseTypeEnum.reflect) return null
+  return (
+    <>
+      <BadgeWrapper onMouseEnter={openTooltip} onMouseLeave={closeTooltip} ref={originRef}>
+        <ColorDrop groupColor={groupColor} />
+      </BadgeWrapper>
+      {tooltipPortal(question)}
+    </>
+  )
+}
+
+export default createFragmentContainer(ColorBadge, {
+  reflection: graphql`
+    fragment ColorBadge_reflection on RetroReflection {
+      phaseItem {
+        question
+        groupColor
+      }
+    }
+  `
+})
